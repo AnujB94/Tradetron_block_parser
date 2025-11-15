@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tradetron Strategy Block Output",
+  "type": "object",
+  "properties": {
+    "sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["Entry", "Exit", "Repair", "UniversalExit"]
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "logic": { "type": "string", "enum": ["AND", "OR"] },
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "left": {
+                        "type": "object",
+                        "properties": {
+                          "indicator": { "type": "string", "enum": ["RSI", "MACD", "SMA", "EMA", "ADX", "LTP", "Volume", "Open Interest","Time"] },
+                          "params": {
+                            "type": "object",
+                            "properties": {
+                              "symbol": { "type": "string" },
+                              "instrument": { "type": "string", "enum": ["STOCK", "FUTURE", "OPTION"] },
+                              "timeframe": { "type": "string", "enum": ["1m", "5m", "15m", "1h", "1d"] },
+                              "period": { "type": "number" }
+                            },
+                            "required": ["symbol"]
+                          }
+                        },
+                        "required": ["indicator", "params"]
+                      },
+                      "operator": { "type": "string", "enum": ["<", ">", "<=", ">=", "=", "!="] },
+                      "right": {
+                        "type": "object",
+                        "properties": {
+                          "value": { "type": "number" }
+                        },
+                        "required": ["value"]
+                      }
+                    },
+                    "required": ["left", "operator", "right"]
+                  }
+                }
+              },
+              "required": ["logic", "rules"]
+            }
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "direction": { "type": "string", "enum": ["BUY", "SELL"] },
+                "exchange": { "type": "string", "enum": ["NSE", "NFO"] },
+                "type": { "type": "string", "enum": ["STOCK", "FUTURE", "CALL", "PUT"] },
+                "underlying": { "type": "string" },
+                "product": { "type": "string", "enum": ["CNC", "MIS", "NRML"] },
+                "qty": { "type": "number" },
+                "limit_price": { "type": ["number", "null"] },
+                "stoploss_trigger": { "type": ["number", "null"] },
+                "strike": { "type": ["string", "null"] },
+                "expiry": { "type": ["string", "null"], "enum": ["Current Week", "Current Month", null] }
+              },
+              "required": ["direction", "exchange", "type", "underlying", "product", "qty"]
+            }
+          }
+        },
+        "required": ["type", "conditions", "positions"]
+      }
+    }
+  }
+}
