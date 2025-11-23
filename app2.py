@@ -1,202 +1,119 @@
 import streamlit as st
+import pandas as pd
 import json
-import yaml
 from groq import Groq
-import json5
+from dotenv import load_dotenv
+import os
+from json_to_yaml import convert_json_to_text
 
-# ------------------------------------------------
-# CONFIG
-# ------------------------------------------------
-SCHEMA_PATH = "schemas/test_schema.json"
-API_KEY = "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"
+load_dotenv()
 
+SCHEMA_PATH = "schemas/test_schemav2.json"
 
-# ------------------------------------------------
-# LOAD SCHEMA
-# ------------------------------------------------
 def load_schema():
-    with open(SCHEMA_PATH, "r") as f:
-        return json.load(f)
+    try:
+        with open(SCHEMA_PATH, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"Error loading schema from {SCHEMA_PATH}: {e}")
+        st.stop()
 
+def llm(schema, prompt):
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        st.error("GROQ_API_KEY not found in environment variables.")
+        st.stop()
 
-# ------------------------------------------------
-# LLM: GENERATE JSON
-# ------------------------------------------------
-def llm_generate(schema, prompt):
-    client = Groq(api_key=API_KEY)
+    client = Groq(api_key=api_key)
 
+    system_rules = """
+    CRITICAL RULES:
+    1. DEFAULT CONDITION: If the user DOES NOT specify an explicit entry condition (e.g., they just say "Buy Call"), you MUST generate this default condition:
+       LTP(Underlying Instrument) > 0.
+       Do NOT generate "1 >= 1" or empty groups.
+    
+    2. OFFSET PARSING:
+       - If user says "ATM+2" or "2 strikes OTM", set 'selection_method': 'ATM' and 'offset': 2.
+       - If user says "ATM-1", set 'selection_method': 'ATM' and 'offset': -1.
+       - If user says "ITM", set 'selection_method': 'ITM' (or offset as appropriate).
+
+    3. STRANGLE / OTM LOGIC (VERY IMPORTANT):
+       - If the user asks for a "Strangle" or mentions "+/- X strikes" (e.g. "+-2"):
+         - The CALL option MUST have a POSITIVE offset (e.g., offset: 2).
+         - The PUT option MUST have a NEGATIVE offset (e.g., offset: -2).
+       - Never use the same positive offset for both legs in a Strangle.
+    """
     completion = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
+        model="openai/gpt-oss-20b", # Ensure this model is available in your Groq tier
         messages=[
             {
-                "role": "system",
+                "role": "user",
                 "content": (
-                    "ONLY output valid JSON. No comments. No text. No explanations.\n"
-                    "It MUST strictly match this schema:\n"
+                    "You are a JSON converter for trading strategies.\n"
+                    "You are a trading strategy assistant. Output ONLY valid JSON.\n"
+                    f"{system_rules}\n"
+                    "Convert user instructions into JSON blocks conforming to this schema:\n"
                     f"{schema}"
                 )
             },
-            {"role": "user", "content": prompt}
+            {
+                "role": "user",
+                "content": "Now convert the following input into JSON. And only give the final json nothing else:"
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
         ],
-        temperature=0.0
+        temperature=0.2,
+        max_completion_tokens=4096,
+        top_p=1,
     )
 
-    return completion.choices[0].message.content.strip()
+    return completion.choices[0].message.content
 
+st.set_page_config(page_title="Strategy JSON Visualizer", layout="wide")
 
-# ------------------------------------------------
-# LLM: VALIDATE JSON
-# ------------------------------------------------
-def llm_validate(schema, json_text):
-    client = Groq(api_key=API_KEY)
+st.title("Trading Strategy JSON Visualizer")
+st.caption(f"Using schema: `{SCHEMA_PATH}`")
 
-    validation_prompt = f"""
-You must validate the JSON against the schema.
-
-Schema:
-{schema}
-
-JSON:
-{json_text}
-
-Respond ONLY with:
-VALID
-or
-INVALID
-"""
-
-    completion = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=[{"role": "user", "content": validation_prompt}],
-        temperature=0.0
-    )
-
-    return completion.choices[0].message.content.strip()
-
-
-# ------------------------------------------------
-# AUTO-RETRY GENERATION UNTIL VALID
-# ------------------------------------------------
-def generate_valid_json(schema, prompt, max_attempts=3):
-    for attempt in range(max_attempts):
-
-        raw = llm_generate(schema, prompt)
-        verdict = llm_validate(schema, raw)
-
-        if verdict.upper().strip() == "VALID":
-            return raw  # Success
-
-        # Regenerate with instructive correction
-        regenerate_prompt = f"""
-The JSON you generated was INVALID.
-Regenerate a NEW JSON that matches the schema exactly.
-Output ONLY JSON.
-
-Schema:
-{schema}
-
-Original request:
-{prompt}
-"""
-
-        raw = llm_generate(schema, regenerate_prompt)
-        verdict = llm_validate(schema, raw)
-
-        if verdict.upper().strip() == "VALID":
-            return raw
-
-    raise ValueError("Model failed to generate valid JSON after several attempts.")
-
-
-# ------------------------------------------------
-# JSON SAFEPARSER
-# ------------------------------------------------
-def safe_parse_json(raw):
-    # Try strict first
-    try:
-        return json.loads(raw)
-    except:
-        pass
-
-    # Try relaxed JSON5
-    try:
-        return json5.loads(raw)
-    except:
-        pass
-
-    # Extract substring between { ... }
-    try:
-        cleaned = raw[raw.index("{") : raw.rindex("}") + 1]
-        return json.loads(cleaned)
-    except:
-        pass
-
-    raise ValueError("INVALID JSON (unable to repair)")
-
-
-# ------------------------------------------------
-# YAML BUILDERS
-# ------------------------------------------------
-def extract_condition_yaml(condition):
-    """
-    We remove logic/rules and flatten:
-    left
-    operator
-    right
-    """
-    rule = condition["rules"][0]
-
-    transformed = {
-        "left": rule["left"],
-        "operator": rule["operator"],
-        "right": rule["right"]
-    }
-
-    return yaml.safe_dump(transformed, sort_keys=False)
-
-
-def extract_positions_yaml(positions):
-    return yaml.safe_dump(positions, sort_keys=False)
-
-
-# ------------------------------------------------
-# STREAMLIT UI
-# ------------------------------------------------
-st.set_page_config(layout="wide")
-st.title("📘 Strategy to Block Converter")
-
+# Load schema now
 schema = load_schema()
-prompt = st.text_area("Enter strategy instruction")
-run = st.button("Convert")
+
+# Create layout
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.subheader("Input")
+    prompt = st.text_area("Enter strategy instruction", height=150, placeholder="e.g. Buy Nifty ATM Call if Time > 9:30")
+    run = st.button("Convert to JSON")
 
 if run:
+    if not prompt.strip():
+        st.error("Please enter a strategy instruction.")
+        st.stop()
 
-    with st.spinner("Generating & Validating JSON using LLM..."):
+    with st.spinner("🔄 Generating Output"):
         try:
-            raw = generate_valid_json(schema, prompt)
-            data = safe_parse_json(raw)
+            raw_json_output = llm(schema, prompt)
+            parsed_data = json.loads(raw_json_output)
+            
+            # --- CONVERSION STEP ---
+            readable_text = convert_json_to_text(parsed_data)
+            
         except Exception as e:
-            st.error(f"❌ Failed after multiple attempts: {e}")
-            st.code(raw, language="json")
+            st.error(f"Error generating or parsing JSON: {e}")
+            if 'raw_json_output' in locals():
+                with st.expander("See Raw Output"):
+                    st.code(raw_json_output, language="json")
             st.stop()
 
-    st.success("✔ Valid JSON generated!")
+    st.success("✔ Generated successfully!")
 
-    sets = data.get("sets", [])
-
-    st.header("📄 Output Sets")
-
-    for i, s in enumerate(sets):
-        st.subheader(f"Set {i} → Type: **{s.get('type', 'Unknown')}**")
-
-        # ---- CONDITIONS YAML ----
-        if "conditions" in s and s["conditions"]:
-            condition_yaml = extract_condition_yaml(s["conditions"][0])
-            st.markdown("#### 🟦 Conditions")
-            st.code(condition_yaml, language="yaml")
-
-        # ---- POSITIONS YAML ----
-        if "positions" in s:
-            positions_yaml = extract_positions_yaml(s["positions"])
-            st.markdown("#### 🟩 Positions")
-            st.code(positions_yaml, language="yaml")
+    # Show Readable Text in the second column
+    with col2:
+        st.subheader("Output")
+        st.code(readable_text, language="yaml")
+        
+        with st.expander("View Raw JSON"):
+            st.json(parsed_data)
