@@ -58,13 +58,6 @@ def llm(schema, prompt):
             },
             {
                 "role": "user",
-                "content": (
-                    "CRITICAL: Output ONLY the raw, complete, and valid JSON object for the following strategy. "
-                    "DO NOT include any explanation, markdown formatting (like ```json), or extra text before or after the JSON."
-                )
-            },
-            {
-                "role": "user",
                 "content": "Now convert the following input into JSON. And only give the final json nothing else:"
             },
             {
