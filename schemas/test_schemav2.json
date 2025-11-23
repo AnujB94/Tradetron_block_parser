@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tradetron Strategy Block Configuration",
+  "description": "Schema for generating trading strategy blocks from natural language, supporting complex logic and dynamic instruments.",
+  "type": "object",
+  "definitions": {
+    "operand": {
+      "description": "Can be a static value (number/time) or a dynamic indicator/keyword",
+      "oneOf": [
+        { "$ref": "#/definitions/indicator_block" },
+        { "$ref": "#/definitions/instrument_field" },
+        { "type": "number", "title": "Static Number" },
+        { "type": "string", "pattern": "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", "title": "Time String (HH:MM)" }
+      ]
+    },
+    "instrument_field": {
+      "type": "object",
+      "properties": {
+        "keyword": { "type": "string", "enum": ["LTP", "Open", "High", "Low", "Close", "Volume", "Open Interest"] },
+        "instrument": { "$ref": "#/definitions/instrument_definition" }
+      },
+      "required": ["keyword", "instrument"]
+    },
+    "instrument_definition": {
+      "type": "object",
+      "properties": {
+        "exchange": { "type": "string", "enum": ["NSE", "NFO", "CDS", "MCX", "BSE"] },
+        "symbol_token": { "type": "string", "description": "The root symbol, e.g., NIFTY, RELIANCE" },
+        "instrument_type": { "type": "string", "enum": ["EQUITY", "FUTURE", "CALL", "PUT"] },
+        "expiry_config": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["Current Week", "Next Week", "Current Month", "Next Month", "Specific Date"] },
+            "date": { "type": "string", "format": "date", "description": "Required if type is Specific Date" }
+          }
+        },
+        "strike_config": {
+          "type": "object",
+          "description": "Dynamic strike selection for options",
+          "properties": {
+            "selection_method": { "type": "string", "enum": ["ATM", "OTM", "ITM", "Strike Price"] },
+            "offset": { "type": "integer", "description": "Positive for OTM/Plus, Negative for ITM/Minus. E.g., ATM+2 -> offset: 2" },
+            "custom_price": { "type": "number", "description": "If specific strike price is needed" }
+          }
+        }
+      },
+      "required": ["exchange", "symbol_token"]
+    },
+    "indicator_block": {
+      "type": "object",
+      "properties": {
+        "function_name": { 
+          "type": "string", 
+          "description": "Name of the technical indicator or function",
+          "examples": ["RSI", "SMA", "EMA", "SuperTrend", "Time", "Min", "Max"] 
+        },
+        "timeframe": { "type": "string", "enum": ["1m", "3m", "5m", "10m", "15m", "30m", "1h", "1d", "1w"] },
+        "inputs": {
+          "type": "object",
+          "description": "Key-value pairs for indicator parameters",
+          "additionalProperties": {
+            "oneOf": [ { "type": "number" }, { "type": "string" } ]
+          },
+          "examples": [{ "period": 14, "field": "Close" }, { "multiplier": 3 }]
+        },
+        "instrument": { "$ref": "#/definitions/instrument_definition" }
+      },
+      "required": ["function_name"]
+    },
+    "logic_group": {
+      "type": "object",
+      "properties": {
+        "condition_type": { "type": "string", "const": "GROUP" },
+        "connection_logic": { 
+            "type": "string", 
+            "enum": ["AND", "OR"],
+            "description": "Logic applied BETWEEN the items in the conditions list"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/comparison_node" },
+              { "$ref": "#/definitions/logic_group" }
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "required": ["conditions"]
+    },
+    "comparison_node": {
+      "type": "object",
+      "properties": {
+        "condition_type": { "type": "string", "const": "COMPARE" },
+        "left": { "$ref": "#/definitions/operand" },
+        "operator": { 
+          "type": "string", 
+          "enum": [">", "<", ">=", "<=", "==", "!=", "Crosses Above", "Crosses Below"] 
+        },
+        "right": { "$ref": "#/definitions/operand" }
+      },
+      "required": ["left", "operator", "right"]
+    }
+  },
+  "properties": {
+    "strategy_sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "set_index": { "type": "integer" },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase_type": { "type": "string", "enum": ["Entry", "Exit", "Repair_Buy", "Repair_Sell", "Universal_Exit"] },
+                "entry_conditions": {
+                   "description": "Root logic block. If multiple conditions exist, use a Logic Group.",
+                   "oneOf": [
+                      { "$ref": "#/definitions/comparison_node" },
+                      { "$ref": "#/definitions/logic_group" }
+                   ]
+                },
+                "positions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "instrument": { "$ref": "#/definitions/instrument_definition" },
+                      "transaction_type": { "type": "string", "enum": ["BUY", "SELL"] },
+                      "product_type": { "type": "string", "enum": ["MIS", "CNC", "NRML"] },
+                      "quantity_setup": {
+                        "type": "object",
+                        "properties": {
+                          "type": { "type": "string", "enum": ["Fixed Quantity", "Lots", "Value"] },
+                          "value": { "type": "number" }
+                        },
+                        "required": ["type", "value"]
+                      }
+                    },
+                    "required": ["instrument", "transaction_type", "quantity_setup"]
+                  }
+                }
+              },
+              "required": ["phase_type", "entry_conditions"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": ["strategy_sets"]
+}

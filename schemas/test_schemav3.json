@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tradetron Strategy Schema (Robust)",
+  "type": "object",
+  "properties": {
+    "strategy_sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "set_index": { "type": "integer" },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase_type": { "type": "string" },
+                "entry_conditions": { "$ref": "#/definitions/logic_group" },
+                "positions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "instrument": { "$ref": "#/definitions/instrument_def" },
+                      "transaction_type": { "type": "string", "enum": ["BUY", "SELL"] },
+                      "product_type": { "type": "string" },
+                      "quantity_setup": { "type": "object" }
+                    },
+                    "required": ["instrument", "transaction_type"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "instrument_def": {
+      "type": "object",
+      "properties": {
+        "exchange": { "type": "string" },
+        "symbol_token": { "type": "string" },
+        "instrument_type": { "type": "string", "enum": ["EQUITY", "FUTURE", "CALL", "PUT", "OPTION"] },
+        "expiry_config": { "type": "object" },
+        "strike_config": {
+          "type": "object",
+          "properties": {
+              "selection_method": { "type": "string", "enum": ["ATM", "ITM", "OTM", "Strike"] },
+              "offset": { "type": "integer", "description": "Positive for OTM/Plus, Negative for ITM/Minus. E.g., ATM+2 -> offset: 2" },
+              "custom_price": { "type": "number" }
+          }
+        }
+      },
+      "required": ["exchange", "symbol_token", "instrument_type"]
+    },
+    "logic_group": {
+      "type": "object",
+      "properties": {
+        "condition_type": { "const": "GROUP" },
+        "connection_logic": { "enum": ["AND", "OR"] },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/comparison_node" },
+              { "$ref": "#/definitions/logic_group" }
+            ]
+          }
+        }
+      }
+    },
+    "comparison_node": {
+      "type": "object",
+      "properties": {
+        "condition_type": { "const": "COMPARE" },
+        "left": { "$ref": "#/definitions/operand" },
+        "operator": { "type": "string" },
+        "right": { "$ref": "#/definitions/operand" }
+      },
+      "required": ["left", "operator", "right"]
+    },
+    "operand": {
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "Function (Time, RSI)",
+          "properties": {
+            "function_name": { "type": "string" },
+            "timeframe": { "type": "string" },
+            "inputs": { "type": "object" }
+          },
+          "required": ["function_name"]
+        },
+        {
+          "type": "object",
+          "title": "Instrument Field (LTP, Close)",
+          "properties": {
+            "keyword": { "type": "string", "enum": ["LTP", "Open", "High", "Low", "Close"] },
+            "instrument": { "$ref": "#/definitions/instrument_def" }
+          },
+          "required": ["keyword", "instrument"]
+        },
+        { "type": "number" },
+        { "type": "string" }
+      ]
+    }
+  }
+}

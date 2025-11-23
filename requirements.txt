@@ -4,4 +4,3 @@ pyyaml
 json5
 requests
 dotenv
-os
