@@ -3,4 +3,4 @@ groq
 pyyaml
 json5
 requests
-dotenv
+python-dotenv
