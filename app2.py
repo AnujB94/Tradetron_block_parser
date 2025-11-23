@@ -5,6 +5,7 @@ from groq import Groq
 from dotenv import load_dotenv
 import os
 from json_to_yaml import convert_json_to_text
+import time
 
 load_dotenv()
 
@@ -88,25 +89,59 @@ with col1:
     prompt = st.text_area("Enter strategy instruction", height=150, placeholder="e.g. Buy Nifty ATM Call if Time > 9:30")
     run = st.button("Convert to JSON")
 
+MAX_RETRIES = 5
+RETRY_DELAY = 1
+
 if run:
     if not prompt.strip():
         st.error("Please enter a strategy instruction.")
         st.stop()
 
+    retry_count = 0
+    parsed_data = None # Initialize parsed_data outside the loop
+    raw_json_output = None # Initialize raw_json_output outside the loop
+
     with st.spinner("🔄 Generating Output"):
-        try:
-            raw_json_output = llm(schema, prompt)
-            parsed_data = json.loads(raw_json_output)
+        while retry_count < MAX_RETRIES:
+            try:
+                # --- LLM CALL ---
+                raw_json_output = llm(schema, prompt)
+                
+                # --- PARSING STEP ---
+                parsed_data = json.loads(raw_json_output)
+                
+                # If parsing succeeds, break the retry loop
+                st.success("JSON generated and parsed successfully!")
+                break 
             
-            # --- CONVERSION STEP ---
-            readable_text = convert_json_to_text(parsed_data)
-            
-        except Exception as e:
-            st.error(f"Error generating or parsing JSON: {e}")
-            if 'raw_json_output' in locals():
-                with st.expander("See Raw Output"):
-                    st.code(raw_json_output, language="json")
-            st.stop()
+            except json.JSONDecodeError as e:
+                # Handle specific JSON parsing error
+                retry_count += 1
+                if retry_count < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY) # Wait before the next attempt
+                
+            except Exception as e:
+                # Handle other potential exceptions (e.g., LLM call failure)
+                st.error(f"An unexpected error occurred: {e}")
+                if 'raw_json_output' in locals() and raw_json_output:
+                    with st.expander("See Raw Output"):
+                        st.code(raw_json_output, language="json")
+                st.stop()
+    
+    # --- Post-Retry Logic ---
+    if parsed_data is not None:
+        # Proceed only if data was successfully parsed
+        # --- CONVERSION STEP ---
+        readable_text = convert_json_to_text(parsed_data)
+        st.success("Output conversion complete.")
+        # st.write(readable_text) # Display the final result
+    else:
+        # This runs if the loop finished without successful parsing
+        st.error(f"Failed to generate and parse valid JSON after {MAX_RETRIES} attempts.")
+        if raw_json_output:
+            with st.expander("See Last Raw Output"):
+                st.code(raw_json_output, language="json")
+        st.stop()
 
     st.success("✔ Generated successfully!")
 
