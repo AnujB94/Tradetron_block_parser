@@ -87,7 +87,7 @@ col1, col2 = st.columns([1, 1])
 with col1:
     st.subheader("Input")
     prompt = st.text_area("Enter strategy instruction", height=150, placeholder="e.g. Buy Nifty ATM Call if Time > 9:30")
-    run = st.button("Convert to JSON")
+    run = st.button("Generate")
 
 MAX_RETRIES = 5
 RETRY_DELAY = 0
