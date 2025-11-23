@@ -9,7 +9,7 @@ import time
 
 load_dotenv()
 
-SCHEMA_PATH = "schemas/test_schemav2.json"
+SCHEMA_PATH = "schemas/test_schemav3.json"
 
 def load_schema():
     try:
@@ -45,7 +45,7 @@ def llm(schema, prompt):
        - Never use the same positive offset for both legs in a Strangle.
     """
     completion = client.chat.completions.create(
-        model="openai/gpt-oss-20b", # Ensure this model is available in your Groq tier
+        model="openai/gpt-oss-120b", # Ensure this model is available in your Groq tier
         messages=[
             {
                 "role": "user",
@@ -90,7 +90,7 @@ with col1:
     run = st.button("Convert to JSON")
 
 MAX_RETRIES = 5
-RETRY_DELAY = 1
+RETRY_DELAY = 0
 
 if run:
     if not prompt.strip():
